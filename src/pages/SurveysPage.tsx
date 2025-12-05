@@ -23,6 +23,8 @@ const formatDateOnly = (date?: string | null) => {
 
 const formatDateOrDash = (date?: string | null) => formatDateOnly(date)
 
+type StatusFilter = 'active' | 'activeInactive' | 'all'
+
 const SurveysPage = () => {
   const publicSurveyBaseUrl =
     import.meta.env.VITE_PUBLIC_SURVEY_BASE_URL ?? 'http://localhost:5173/surveys'
@@ -32,6 +34,8 @@ const SurveysPage = () => {
   const [deleteTarget, setDeleteTarget] = useState<Survey | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [restoringId, setRestoringId] = useState<number | null>(null)
+  const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
+  const [searchTerm, setSearchTerm] = useState('')
 
   const fetchSurveys = useCallback(async () => {
     setLoading(true)
@@ -72,9 +76,23 @@ const SurveysPage = () => {
     void fetchSurveys()
   }, [fetchSurveys])
 
-  const sortedSurveys = useMemo(() => {
-    return [...surveys].sort((a, b) => b.id - a.id)
-  }, [surveys])
+  const filteredAndSortedSurveys = useMemo(() => {
+    const term = searchTerm.trim().toLowerCase()
+    const filtered = surveys.filter((survey) => {
+      const matchesStatus =
+        statusFilter === 'all'
+          ? true
+          : statusFilter === 'activeInactive'
+            ? !survey.deletedAt
+            : survey.ativo && !survey.deletedAt
+      const matchesSearch = term
+        ? survey.titulo.toLowerCase().includes(term) ||
+          (survey.descricao ?? '').toLowerCase().includes(term)
+        : true
+      return matchesStatus && matchesSearch
+    })
+    return filtered.sort((a, b) => b.id - a.id)
+  }, [searchTerm, statusFilter, surveys])
 
   const getStatusPills = (survey: Survey) => {
     const pills: Array<{ label: string; className: string }> = [
@@ -133,16 +151,39 @@ const SurveysPage = () => {
         <div className="panel-header">
           <div>
             <p className="eyebrow">Pesquisas</p>
-            <h2>Todas (ativas e inativas)</h2>
+          </div>
+          <div className="filter-group">
+            <label>
+              <span>Status</span>
+              <select
+                value={statusFilter}
+                onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+              >
+                <option value="active">Apenas ativas</option>
+                <option value="activeInactive">Ativas e inativas</option>
+                <option value="all">Todas (inclui removidas)</option>
+              </select>
+            </label>
+            <label>
+              <span>Buscar</span>
+              <input
+                type="search"
+                value={searchTerm}
+                onChange={(event) => setSearchTerm(event.target.value)}
+                placeholder="Título ou descrição"
+              />
+            </label>
           </div>
         </div>
 
         {loading && <p>Carregando pesquisas...</p>}
         {error && <p className="error-text">{error}</p>}
 
-        {!loading && !error && sortedSurveys.length === 0 && <p>Nenhuma pesquisa registrada.</p>}
+        {!loading && !error && filteredAndSortedSurveys.length === 0 && (
+          <p>Nenhuma pesquisa registrada.</p>
+        )}
 
-        {sortedSurveys.length > 0 && (
+        {filteredAndSortedSurveys.length > 0 && (
           <div className="table-wrapper">
             <table>
               <thead>
@@ -156,7 +197,7 @@ const SurveysPage = () => {
                 </tr>
               </thead>
               <tbody>
-                {sortedSurveys.map((survey) => (
+                {filteredAndSortedSurveys.map((survey) => (
                   <tr key={survey.id}>
                     <td>#{survey.id}</td>
                     <td>
