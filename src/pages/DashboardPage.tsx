@@ -1,4 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import Layout from '../components/Layout'
 import MetricCard from '../components/MetricCard'
 import { dashboardApi, parseApiError, surveyApi } from '../services/api'
@@ -31,6 +43,8 @@ const DashboardPage = () => {
   const [overviewLoading, setOverviewLoading] = useState(true)
   const [loadingSurveys, setLoadingSurveys] = useState(true)
   const [surveysError, setSurveysError] = useState<string>()
+
+  const chartColors = ['#0f8f53', '#2ca66f', '#55b98a', '#f3c567', '#f19953', '#df5f51', '#8d6cab']
 
   useEffect(() => {
     const fetchSurveys = async () => {
@@ -74,6 +88,30 @@ const DashboardPage = () => {
       .slice(0, 4)
   }, [surveys])
 
+  const statusBreakdown = useMemo(() => {
+    const total = surveys.length
+    const active = surveys.filter((survey) => survey.ativo && !survey.deletedAt).length
+    const inactive = surveys.filter((survey) => !survey.ativo && !survey.deletedAt).length
+    const removed = surveys.filter((survey) => survey.deletedAt).length
+    return [
+      { name: 'Ativas', value: active },
+      { name: 'Inativas', value: inactive },
+      { name: 'Removidas', value: removed },
+    ].filter((item) => item.value > 0 || total === 0)
+  }, [surveys])
+
+  const responsesBars = useMemo(
+    () =>
+      overview
+        ? [
+            { label: 'Total', value: overview.totals.responses },
+            { label: '30 dias', value: overview.totals.responsesLast30Days },
+            { label: '7 dias', value: overview.totals.responsesLast7Days },
+          ].filter((item) => item.value !== undefined)
+        : [],
+    [overview],
+  )
+
   const surveyTitleById = useMemo(() => {
     const map = new Map<number, string>()
     surveys.forEach((survey) => map.set(survey.id, survey.titulo))
@@ -85,6 +123,15 @@ const DashboardPage = () => {
     surveyTitleById.get(item.surveyId) ||
     item.metricLabel ||
     `Pesquisa #${item.surveyId}`
+
+  const mostRespondedData = useMemo(
+    () =>
+      overview?.rankings?.mostResponded?.map((item) => ({
+        name: getRankingTitle(item),
+        value: item.value,
+      })) ?? [],
+    [overview?.rankings?.mostResponded, surveyTitleById],
+  )
 
   return (
     <Layout title="Dashboard">
@@ -142,6 +189,56 @@ const DashboardPage = () => {
                 <span className="metric-card__dot" />
               </MetricCard>
             </div>
+            <div className="chart-grid">
+              <article className="chart-card">
+                <p className="chart-card__title">Respostas recentes</p>
+                <p className="chart-card__subtitle">Total, últimos 30 e 7 dias</p>
+                {responsesBars.length === 0 ? (
+                  <p className="chart-empty">Sem dados</p>
+                ) : (
+                  <div className="chart-container chart-container--small">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={responsesBars} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="label" />
+                        <YAxis />
+                        <Tooltip formatter={(value: number) => value.toLocaleString('pt-BR')} />
+                        <Bar dataKey="value" radius={[6, 6, 0, 0]} fill="#0f8f53" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </article>
+
+              <article className="chart-card">
+                <p className="chart-card__title">Status das pesquisas</p>
+                <p className="chart-card__subtitle">Ativas, inativas e removidas</p>
+                {statusBreakdown.length === 0 ? (
+                  <p className="chart-empty">Sem dados</p>
+                ) : (
+                  <div className="chart-container chart-container--small">
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={statusBreakdown}
+                          dataKey="value"
+                          nameKey="name"
+                          innerRadius={50}
+                          outerRadius={80}
+                          paddingAngle={2}
+                          label
+                        >
+                          {statusBreakdown.map((entry, index) => (
+                            <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value: number) => value.toLocaleString('pt-BR')} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                )}
+              </article>
+            </div>
           </>
         )}
       </section>
@@ -189,7 +286,33 @@ const DashboardPage = () => {
                     ))}
                   </ul>
                 </article>
-              ))}
+                  ))}
+          </div>
+        </section>
+      )}
+
+      {mostRespondedData.length > 0 && (
+        <section className="panel">
+          <div className="panel-header">
+            <div>
+              <p className="eyebrow">Destaques</p>
+              <h2>Mais respondidas (gráfico)</h2>
+            </div>
+          </div>
+          <div className="chart-container">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart
+                data={mostRespondedData}
+                layout="vertical"
+                margin={{ top: 8, right: 12, left: 12, bottom: 8 }}
+              >
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis type="number" />
+                <YAxis type="category" dataKey="name" width={200} />
+                <Tooltip formatter={(value: number) => value.toLocaleString('pt-BR')} />
+                <Bar dataKey="value" fill="#0b301e" radius={[0, 6, 6, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
           </div>
         </section>
       )}

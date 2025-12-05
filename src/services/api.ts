@@ -15,6 +15,7 @@ import type {
   SurveyDashboardMetrics,
   SurveyDashboardResponse,
   SurveyStructure,
+  Vote,
   UpdateSurveyPayload,
 } from '../types/api'
 
@@ -171,6 +172,18 @@ export const surveyApi = {
     })
     return response.data
   },
+  async export(id: number, options?: { includeDeleted?: boolean }) {
+    const response = await apiClient.get<Blob>(`/surveys/${id}/export`, {
+      params: { includeDeleted: options?.includeDeleted ?? true },
+      responseType: 'blob',
+    })
+    const disposition =
+      (response.headers?.['content-disposition'] as string | undefined) ||
+      (response.headers?.['Content-Disposition'] as string | undefined)
+    const filenameMatch = disposition?.match(/filename[^;=\n]*=(?:UTF-8['"]*)?([^;\n]*)/i)
+    const filename = filenameMatch?.[1]?.replace(/["']/g, '')?.trim()
+    return { blob: response.data, filename }
+  },
 }
 
 export const questionApi = {
@@ -186,6 +199,10 @@ export const questionApi = {
   },
   async create(payload: CreateQuestionPayload) {
     const response = await apiClient.post<Question>('/questions', payload)
+    return response.data
+  },
+  async update(id: number, payload: CreateQuestionPayload) {
+    const response = await apiClient.put<Question>(`/questions/${id}`, payload)
     return response.data
   },
   async remove(id: number) {
@@ -207,6 +224,10 @@ export const optionApi = {
   },
   async create(payload: CreateOptionPayload) {
     const response = await apiClient.post<Option>('/options', payload)
+    return response.data
+  },
+  async update(id: number, payload: CreateOptionPayload) {
+    const response = await apiClient.put<Option>(`/options/${id}`, payload)
     return response.data
   },
   async remove(id: number) {
@@ -306,9 +327,11 @@ export const dashboardApi = {
       abandonmentRate:
         totals.abandonmentRate ?? normalizeRate(toNumber(overview.abandonmentRate)),
       avgResponseTimeSeconds:
-        overview.avgResponseTimeSeconds ??
-        overview.averageResponseTimeSeconds ??
-        (overview as { averageResponseTime?: unknown }).averageResponseTime,
+        toNumber(
+          overview.avgResponseTimeSeconds ??
+            overview.averageResponseTimeSeconds ??
+            (overview as { averageResponseTime?: unknown }).averageResponseTime,
+        ),
       predominantDevice: overview.predominantDevice,
       peakQuestionAbandonment:
         overview.peakQuestionAbandonment ||
@@ -423,5 +446,31 @@ export const dashboardApi = {
       duplicateRespondents: data.duplicateResponses,
       suspiciousSessions: data.suspiciousIndicators,
     } satisfies SurveyAudienceMetrics
+  },
+}
+
+export const voteApi = {
+  async list({
+    surveyId,
+    questionId,
+    page = 0,
+    size = 50,
+    includeDeleted,
+  }: {
+    surveyId: number
+    questionId?: number
+    page?: number
+    size?: number
+    includeDeleted?: boolean
+  }) {
+    const response = await apiClient.get<{ content?: Vote[] } | Vote[]>(`/surveys/${surveyId}/votes`, {
+      params: {
+        questionId,
+        page,
+        size,
+        includeDeleted,
+      },
+    })
+    return response.data
   },
 }

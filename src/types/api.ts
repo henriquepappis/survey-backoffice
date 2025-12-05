@@ -182,6 +182,24 @@ export interface SurveyAudienceMetrics {
   suspiciousSessions?: number
 }
 
+export interface Vote {
+  id: number
+  surveyId: number
+  questionId: number
+  questionText: string
+  optionId: number
+  optionText: string
+  createdAt?: string
+  sessionId?: string | number
+  source?: string
+  device?: string
+  location?: {
+    country?: string
+    state?: string
+    city?: string
+  }
+}
+
 export interface ApiError {
   timestamp: string
   status: number

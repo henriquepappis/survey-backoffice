@@ -21,9 +21,9 @@ const formatDateOnly = (date?: string | null) => {
   return parsed.toLocaleDateString('pt-BR')
 }
 
-const formatDateOrDash = (date?: string | null) => formatDateOnly(date)
-
 type StatusFilter = 'active' | 'activeInactive' | 'all'
+type SortKey = 'id' | 'validity'
+type SortDirection = 'asc' | 'desc'
 
 const SurveysPage = () => {
   const publicSurveyBaseUrl =
@@ -34,8 +34,12 @@ const SurveysPage = () => {
   const [deleteTarget, setDeleteTarget] = useState<Survey | null>(null)
   const [isDeleting, setIsDeleting] = useState(false)
   const [restoringId, setRestoringId] = useState<number | null>(null)
+  const [restoreTarget, setRestoreTarget] = useState<Survey | null>(null)
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all')
   const [searchTerm, setSearchTerm] = useState('')
+  const [sortKey, setSortKey] = useState<SortKey>('id')
+  const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [toast, setToast] = useState<{ type: 'error' | 'info'; message: string } | null>(null)
 
   const fetchSurveys = useCallback(async () => {
     setLoading(true)
@@ -58,6 +62,7 @@ const SurveysPage = () => {
       setSurveys(normalized)
     } catch (err) {
       setError(parseApiError(err))
+      setToast({ type: 'error', message: parseApiError(err) })
     } finally {
       setLoading(false)
     }
@@ -76,6 +81,14 @@ const SurveysPage = () => {
     void fetchSurveys()
   }, [fetchSurveys])
 
+  const handleSort = (key: SortKey) => {
+    setSortDirection((prev) => {
+      if (sortKey !== key) return 'asc'
+      return prev === 'asc' ? 'desc' : 'asc'
+    })
+    setSortKey(key)
+  }
+
   const filteredAndSortedSurveys = useMemo(() => {
     const term = searchTerm.trim().toLowerCase()
     const filtered = surveys.filter((survey) => {
@@ -91,8 +104,16 @@ const SurveysPage = () => {
         : true
       return matchesStatus && matchesSearch
     })
-    return filtered.sort((a, b) => b.id - a.id)
-  }, [searchTerm, statusFilter, surveys])
+    const sorted = [...filtered].sort((a, b) => {
+      if (sortKey === 'id') {
+        return sortDirection === 'asc' ? a.id - b.id : b.id - a.id
+      }
+      const dateA = parseDateSafe(a.dataValidade)?.getTime() ?? 0
+      const dateB = parseDateSafe(b.dataValidade)?.getTime() ?? 0
+      return sortDirection === 'asc' ? dateA - dateB : dateB - dateA
+    })
+    return sorted
+  }, [searchTerm, sortDirection, sortKey, statusFilter, surveys])
 
   const getStatusPills = (survey: Survey) => {
     const pills: Array<{ label: string; className: string }> = [
@@ -126,6 +147,7 @@ const SurveysPage = () => {
       await fetchSurveys()
     } catch (err) {
       setError(parseApiError(err))
+      setToast({ type: 'error', message: parseApiError(err) })
     } finally {
       setRestoringId(null)
     }
@@ -146,35 +168,69 @@ const SurveysPage = () => {
         onConfirm={confirmDelete}
         confirmLoading={isDeleting}
       />
+      <ConfirmModal
+        open={Boolean(restoreTarget)}
+        title="Restaurar pesquisa"
+        description={
+          restoreTarget
+            ? `Deseja restaurar "${restoreTarget.titulo}" e suas perguntas/opções?`
+            : ''
+        }
+        confirmLabel="Restaurar"
+        onCancel={() => setRestoreTarget(null)}
+        onConfirm={async () => {
+          if (!restoreTarget) return
+          await handleRestore(restoreTarget)
+          setRestoreTarget(null)
+        }}
+        confirmLoading={restoringId === restoreTarget?.id}
+      />
+      {toast && (
+        <div className={`toast ${toast.type === 'error' ? 'error' : ''}`}>
+          <span>{toast.message}</span>
+          <button type="button" onClick={() => setToast(null)}>
+            ×
+          </button>
+        </div>
+      )}
 
       <section className="panel">
         <div className="panel-header">
           <div>
             <p className="eyebrow">Pesquisas</p>
+            <h2>Todas</h2>
           </div>
-          <div className="filter-group">
-            <label>
-              <span>Status</span>
-              <select
-                value={statusFilter}
-                onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
-              >
-                <option value="active">Apenas ativas</option>
-                <option value="activeInactive">Ativas e inativas</option>
-                <option value="all">Todas (inclui removidas)</option>
-              </select>
-            </label>
-            <label>
-              <span>Buscar</span>
-              <input
-                type="search"
-                value={searchTerm}
-                onChange={(event) => setSearchTerm(event.target.value)}
-                placeholder="Título ou descrição"
-              />
-            </label>
+          <div className="hero-actions">
+            <Link to="/surveys/new" className="btn primary small">
+              Criar pesquisa
+            </Link>
           </div>
         </div>
+        <div className="filter-group" style={{ justifyContent: 'flex-start', flexWrap: 'wrap' }}>
+          <label>
+            <span>Status</span>
+            <select
+              value={statusFilter}
+              onChange={(event) => setStatusFilter(event.target.value as StatusFilter)}
+            >
+              <option value="active">Apenas ativas</option>
+              <option value="activeInactive">Ativas e inativas</option>
+              <option value="all">Todas (inclui removidas)</option>
+            </select>
+          </label>
+          <label>
+            <span>Buscar</span>
+            <input
+              type="search"
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Título ou descrição"
+            />
+          </label>
+        </div>
+        <p className="muted-text">
+          Mostrando {filteredAndSortedSurveys.length} de {surveys.length} pesquisas
+        </p>
 
         {loading && <p>Carregando pesquisas...</p>}
         {error && <p className="error-text">{error}</p>}
@@ -188,26 +244,37 @@ const SurveysPage = () => {
             <table>
               <thead>
                 <tr>
-                  <th>ID</th>
+                  <th className="text-center">
+                    <button
+                      type="button"
+                      className="table-sort"
+                      onClick={() => handleSort('id')}
+                    >
+                      ID
+                    </button>
+                  </th>
                   <th>Título</th>
-                  <th>Status</th>
-                  <th>Validade</th>
-                  <th>Deletada em</th>
-                  <th>Ações</th>
+                  <th className="text-center">Status</th>
+                  <th className="text-center">
+                    <button
+                      type="button"
+                      className="table-sort"
+                      onClick={() => handleSort('validity')}
+                    >
+                      Validade
+                    </button>
+                  </th>
+                  <th className="text-center">Ações</th>
                 </tr>
               </thead>
               <tbody>
                 {filteredAndSortedSurveys.map((survey) => (
                   <tr key={survey.id}>
-                    <td>#{survey.id}</td>
+                    <td className="text-center">#{survey.id}</td>
                     <td>
                       <strong>{survey.titulo}</strong>
-                      {survey.descricao && <div className="muted-text muted-text--light">{survey.descricao}</div>}
-                      {survey.deletedAt && (
-                        <div className="muted-text">Deletada em {formatDateOnly(survey.deletedAt)}</div>
-                      )}
                     </td>
-                    <td>
+                    <td className="text-center">
                       <div className="status-stack">
                         {getStatusPills(survey).map((status) => (
                           <span key={status.label} className={`status-pill ${status.className}`}>
@@ -216,9 +283,8 @@ const SurveysPage = () => {
                         ))}
                       </div>
                     </td>
-                    <td>{formatDateOnly(survey.dataValidade)}</td>
-                    <td>{formatDateOrDash(survey.deletedAt)}</td>
-                    <td className="table-actions">
+                    <td className="text-center">{formatDateOnly(survey.dataValidade)}</td>
+                    <td className="table-actions text-center">
                       <button
                         className="btn ghost small"
                         type="button"
@@ -238,7 +304,7 @@ const SurveysPage = () => {
                       <button
                         className="btn danger small"
                         type="button"
-                        onClick={() => handleRestore(survey)}
+                        onClick={() => setRestoreTarget(survey)}
                         disabled={restoringId === survey.id}
                       >
                         Restaurar

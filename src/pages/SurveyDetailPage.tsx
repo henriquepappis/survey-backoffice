@@ -7,16 +7,18 @@ import MetricCard from '../components/MetricCard'
 import { optionApi, parseApiError, questionApi, surveyApi } from '../services/api'
 import type { SurveyStructure } from '../types/api'
 
-const formatDate = (date?: string | null) => {
-  if (!date) return 'Sem data definida'
-  return new Date(date).toLocaleDateString('pt-BR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-  })
-}
-
 const MAX_ACTIVE_OPTIONS = 5
+
+const toDateValue = (value?: string | null) => {
+  if (!value) return ''
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return ''
+  const pad = (num: number) => num.toString().padStart(2, '0')
+  const year = parsed.getFullYear()
+  const month = pad(parsed.getMonth() + 1)
+  const day = pad(parsed.getDate())
+  return `${year}-${month}-${day}`
+}
 
 const SurveyDetailPage = () => {
   const { id } = useParams()
@@ -25,13 +27,31 @@ const SurveyDetailPage = () => {
   const [survey, setSurvey] = useState<SurveyStructure>()
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string>()
+  const [toast, setToast] = useState<{ type: 'error' | 'success'; message: string } | null>(null)
   const [questionForm, setQuestionForm] = useState({ texto: '', ordem: 1 })
   const [optionForm, setOptionForm] = useState({ questionId: '', texto: '', ativo: true })
   const [feedback, setFeedback] = useState<string>()
   const [formError, setFormError] = useState<string>()
   const [deleteModalOpen, setDeleteModalOpen] = useState(false)
   const [isDeleting, setIsDeleting] = useState(false)
-
+  const [surveyForm, setSurveyForm] = useState({
+    titulo: '',
+    descricao: '',
+    dataValidade: '',
+    ativo: true,
+  })
+  const [savingSurvey, setSavingSurvey] = useState(false)
+  const [surveySaveMessage, setSurveySaveMessage] = useState<string>()
+  const [editingQuestion, setEditingQuestion] = useState<{ id: number; texto: string; ordem: number } | null>(null)
+  const [editingOption, setEditingOption] = useState<{
+    id: number
+    questionId: number
+    texto: string
+    ativo: boolean
+  } | null>(null)
+  const [savingOptionId, setSavingOptionId] = useState<number | null>(null)
+  const [newOptionText, setNewOptionText] = useState<Record<number, string>>({})
+  const [exporting, setExporting] = useState(false)
   const loadSurvey = useCallback(async () => {
     if (!surveyId) return
     setLoading(true)
@@ -42,12 +62,132 @@ const SurveyDetailPage = () => {
         includeInactiveOptions: true,
       })
       setSurvey(structureData)
+      setSurveyForm({
+        titulo: structureData.titulo,
+        descricao: structureData.descricao ?? '',
+        dataValidade: toDateValue(structureData.dataValidade),
+        ativo: structureData.ativo,
+      })
     } catch (err) {
-      setError(parseApiError(err))
+      const msg = parseApiError(err)
+      setError(msg)
+      setToast({ type: 'error', message: msg })
     } finally {
       setLoading(false)
     }
-  }, [surveyId])
+  }, [surveyId, setToast])
+
+  const saveQuestionEdit = async () => {
+    if (!editingQuestion || !surveyId) return
+    setFormError(undefined)
+    try {
+      await questionApi.update(editingQuestion.id, {
+        texto: editingQuestion.texto.trim(),
+        ordem: editingQuestion.ordem,
+        surveyId,
+      })
+      setEditingQuestion(null)
+      await loadSurvey()
+    } catch (err) {
+      const msg = parseApiError(err)
+      setFormError(msg)
+      setToast({ type: 'error', message: msg })
+    }
+  }
+
+  const handleExport = async () => {
+    if (!surveyId) return
+    setExporting(true)
+    setToast(null)
+    try {
+      const { blob, filename } = await surveyApi.export(surveyId, { includeDeleted: true })
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement('a')
+      link.href = url
+      link.download = filename || `survey-${surveyId}.xlsx`
+      document.body.appendChild(link)
+      link.click()
+      link.remove()
+      URL.revokeObjectURL(url)
+      setToast({ type: 'success', message: 'Exportação iniciada.' })
+    } catch (err) {
+      const msg = parseApiError(err)
+      setToast({ type: 'error', message: msg })
+    } finally {
+      setExporting(false)
+    }
+  }
+
+  const saveOptionEdit = async () => {
+    if (!editingOption || !editingOption.questionId) return
+    setFormError(undefined)
+    try {
+      await optionApi.update(editingOption.id, {
+        texto: editingOption.texto.trim(),
+        ativo: editingOption.ativo,
+        questionId: editingOption.questionId,
+      })
+      setEditingOption(null)
+      await loadSurvey()
+    } catch (err) {
+      const msg = parseApiError(err)
+      setFormError(msg)
+      setToast({ type: 'error', message: msg })
+    }
+  }
+
+  const toggleOptionActive = async (optionId: number, questionId: number, current: boolean) => {
+    setSavingOptionId(optionId)
+    setFormError(undefined)
+    try {
+      await optionApi.update(optionId, {
+        texto: survey?.questions
+          .find((q) => q.id === questionId)
+          ?.options?.find((opt) => opt.id === optionId)?.texto ?? '',
+        ativo: !current,
+        questionId,
+      })
+      await loadSurvey()
+    } catch (err) {
+      const msg = parseApiError(err)
+      setFormError(msg)
+      setToast({ type: 'error', message: msg })
+    } finally {
+      setSavingOptionId(null)
+    }
+  }
+
+  const handleInlineAddOption = async (questionId: number) => {
+    const text = (newOptionText[questionId] ?? '').trim()
+    if (!text) {
+      setFormError('Informe um texto para a opção.')
+      return
+    }
+    const question = survey?.questions.find((q) => q.id === questionId)
+    if (question) {
+      const activeCount = (question.options ?? []).filter((option) => option.ativo).length
+      if (activeCount >= MAX_ACTIVE_OPTIONS) {
+        setFormError(
+          `Máximo de ${MAX_ACTIVE_OPTIONS} opções ativas por pergunta. Desative uma opção antes de ativar outra.`,
+        )
+        return
+      }
+    }
+    setFormError(undefined)
+    try {
+      await optionApi.create({
+        texto: text,
+        ativo: true,
+        questionId,
+      })
+      setNewOptionText((prev) => ({ ...prev, [questionId]: '' }))
+      await loadSurvey()
+    } catch (err) {
+      const msg = parseApiError(err)
+      setFormError(msg)
+      setToast({ type: 'error', message: msg })
+    }
+  }
 
   useEffect(() => {
     void loadSurvey()
@@ -67,7 +207,9 @@ const SurveyDetailPage = () => {
       setFeedback('Pergunta adicionada com sucesso.')
       await loadSurvey()
     } catch (err) {
-      setFormError(parseApiError(err))
+      const msg = parseApiError(err)
+      setFormError(msg)
+      setToast({ type: 'error', message: msg })
     }
   }
 
@@ -100,7 +242,35 @@ const SurveyDetailPage = () => {
       setFeedback('Opção adicionada com sucesso.')
       await loadSurvey()
     } catch (err) {
-      setFormError(parseApiError(err))
+      const msg = parseApiError(err)
+      setFormError(msg)
+      setToast({ type: 'error', message: msg })
+    }
+  }
+
+  const saveSurvey = async () => {
+    if (!surveyId) return
+    setSavingSurvey(true)
+    setSurveySaveMessage(undefined)
+    setFormError(undefined)
+    try {
+      await surveyApi.update(surveyId, {
+        titulo: surveyForm.titulo.trim(),
+        descricao: surveyForm.descricao.trim() || null,
+        ativo: surveyForm.ativo,
+        dataValidade: surveyForm.dataValidade
+          ? new Date(`${surveyForm.dataValidade}T23:59:00`).toISOString()
+          : null,
+      })
+      setSurveySaveMessage('Pesquisa atualizada com sucesso.')
+      setToast({ type: 'success', message: 'Pesquisa atualizada com sucesso.' })
+      await loadSurvey()
+    } catch (err) {
+      const msg = parseApiError(err)
+      setFormError(msg)
+      setToast({ type: 'error', message: msg })
+    } finally {
+      setSavingSurvey(false)
     }
   }
 
@@ -177,8 +347,48 @@ const SurveyDetailPage = () => {
         <div className="panel-header">
           <div>
             <p className="eyebrow">Pesquisa #{survey?.id}</p>
-            <h2>{survey?.titulo ?? 'Carregando...'}</h2>
-            {survey?.descricao && <p className="muted-text muted-text--light">{survey.descricao}</p>}
+            <input
+              className="input-title"
+              value={surveyForm.titulo}
+              onChange={(event) =>
+                setSurveyForm((prev) => ({
+                  ...prev,
+                  titulo: event.target.value,
+                }))
+              }
+              placeholder="Título da pesquisa"
+              disabled={savingSurvey}
+            />
+            <textarea
+              className="textarea-unstyled"
+              value={surveyForm.descricao}
+              onChange={(event) =>
+                setSurveyForm((prev) => ({
+                  ...prev,
+                  descricao: event.target.value,
+                }))
+              }
+              placeholder="Descrição da pesquisa"
+              rows={2}
+              disabled={savingSurvey}
+            />
+            <div className="validity-inline">
+              <label className="form-field">
+                <span>Validade</span>
+                <input
+                  type="date"
+                  value={surveyForm.dataValidade}
+                  onChange={(event) =>
+                    setSurveyForm((prev) => ({
+                      ...prev,
+                      dataValidade: event.target.value,
+                    }))
+                  }
+                  className="input-validity"
+                  disabled={savingSurvey}
+                />
+              </label>
+            </div>
           </div>
           <div className="hero-actions">
             <Link to="/surveys" className="btn ghost">
@@ -189,17 +399,14 @@ const SurveyDetailPage = () => {
                 Métricas
               </Link>
             )}
-            <button className="btn secondary" type="button">
-              Duplicar
-            </button>
-            <button className="btn primary" type="button">
-              Publicar alterações
+            <button className="btn primary" type="button" onClick={saveSurvey} disabled={savingSurvey}>
+              {savingSurvey ? 'Salvando...' : 'Salvar alterações'}
             </button>
             <button
               className="btn danger"
               type="button"
               onClick={() => setDeleteModalOpen(true)}
-              disabled={isDeleting}
+              disabled={isDeleting || savingSurvey}
             >
               Remover
             </button>
@@ -207,10 +414,9 @@ const SurveyDetailPage = () => {
         </div>
         {loading && <p>Carregando dados...</p>}
         {error && <p className="error-text">{error}</p>}
+        {surveySaveMessage && <p className="success-text">{surveySaveMessage}</p>}
         {survey && !loading && !error && (
           <>
-            <p className="eyebrow">Validade</p>
-            <p className="muted-text validity-text">{formatDate(survey.dataValidade)}</p>
             <div className="metrics-grid">
               <MetricCard title="Status" value={survey.ativo ? 'Ativa' : 'Inativa'}>
                 <span className={`status-pill ${survey.ativo ? 'success' : 'neutral'}`}>
@@ -238,15 +444,24 @@ const SurveyDetailPage = () => {
         )}
       </section>
 
+      {toast && (
+        <div className={`toast ${toast.type === 'error' ? 'error' : ''}`}>
+          <span>{toast.message}</span>
+          <button type="button" onClick={() => setToast(null)}>
+            ×
+          </button>
+        </div>
+      )}
+
       {survey && (
         <section className="panel grid-two-columns">
           <form className="form-vertical" onSubmit={handleQuestionSubmit}>
             <div className="panel-header">
               <div>
-                <p className="eyebrow">Perguntas</p>
-                <h2>Novo bloco</h2>
-              </div>
-            </div>
+                    <p className="eyebrow">Perguntas</p>
+                    <h2>Novo bloco</h2>
+                  </div>
+                </div>
             <label className="form-field">
               <span>Texto</span>
               <textarea
@@ -356,7 +571,7 @@ const SurveyDetailPage = () => {
               <button className="btn ghost" type="button">
                 Reordenar
               </button>
-              <button className="btn secondary" type="button">
+              <button className="btn secondary" type="button" onClick={handleExport} disabled={exporting}>
                 Exportar
               </button>
             </div>
@@ -368,15 +583,72 @@ const SurveyDetailPage = () => {
                 <div className="card-header">
                   <div>
                     <p className="eyebrow">#{question.ordem}</p>
-                    <h3>{question.texto}</h3>
+                    {editingQuestion?.id === question.id ? (
+                      <>
+                        <input
+                          className="input-unstyled"
+                          value={editingQuestion.texto}
+                          onChange={(event) =>
+                            setEditingQuestion((prev) =>
+                              prev
+                                ? {
+                                    ...prev,
+                                    texto: event.target.value,
+                                  }
+                                : prev,
+                            )
+                          }
+                        />
+                        <label className="form-field" style={{ marginTop: '0.5rem' }}>
+                          <span>Ordem</span>
+                          <input
+                            type="number"
+                            min={1}
+                            max={999}
+                            style={{ maxWidth: '100px' }}
+                            value={editingQuestion.ordem}
+                            onChange={(event) =>
+                              setEditingQuestion((prev) =>
+                                prev
+                                  ? {
+                                      ...prev,
+                                      ordem: Number(event.target.value) || question.ordem,
+                                    }
+                                  : prev,
+                              )
+                            }
+                          />
+                        </label>
+                      </>
+                    ) : (
+                      <h3>{question.texto}</h3>
+                    )}
                   </div>
                   <div className="card-actions">
-                    <button className="btn ghost small" type="button">
-                      Editar
-                    </button>
-                    <button className="btn ghost small" type="button">
-                      Duplicar
-                    </button>
+                    {editingQuestion?.id === question.id ? (
+                      <>
+                        <button className="btn secondary small" type="button" onClick={saveQuestionEdit}>
+                          Salvar
+                        </button>
+                        <button
+                          className="btn ghost small"
+                          type="button"
+                          onClick={() => setEditingQuestion(null)}
+                        >
+                          Cancelar
+                        </button>
+                      </>
+                    ) : (
+                      <button
+                        className="btn ghost small"
+                        type="button"
+                        onClick={() =>
+                          setEditingQuestion({ id: question.id, texto: question.texto, ordem: question.ordem })
+                        }
+                      >
+                        Editar
+                      </button>
+                    )}
                   </div>
                 </div>
                 <ul className="options-list">
@@ -385,12 +657,89 @@ const SurveyDetailPage = () => {
                   )}
                   {(question.options ?? []).map((option) => (
                     <li key={option.id} className="option-row">
-                      <span>{option.texto}</span>
-                      <span className={`status-pill ${option.ativo ? 'success' : 'neutral'}`}>
-                        {option.ativo ? 'Ativa' : 'Inativa'}
-                      </span>
+                      {editingOption?.id === option.id ? (
+                        <>
+                          <input
+                            value={editingOption.texto}
+                            onChange={(event) =>
+                              setEditingOption((prev) =>
+                                prev ? { ...prev, texto: event.target.value } : prev,
+                              )
+                            }
+                          />
+                          <label className="form-checkbox" style={{ margin: 0 }}>
+                            <input
+                              type="checkbox"
+                              checked={editingOption.ativo}
+                              onChange={(event) =>
+                                setEditingOption((prev) =>
+                                  prev ? { ...prev, ativo: event.target.checked } : prev,
+                              )
+                            }
+                          />
+                          <span>Ativa</span>
+                        </label>
+                          <div className="option-row__spacer" />
+                          <div className="table-actions">
+                            <button className="btn secondary small" type="button" onClick={saveOptionEdit}>
+                              Salvar
+                            </button>
+                            <button
+                              className="btn ghost small"
+                              type="button"
+                              onClick={() => setEditingOption(null)}
+                            >
+                              Cancelar
+                            </button>
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <span>{option.texto}</span>
+                          <div className="option-row__spacer" />
+                          <button
+                            className={`status-pill ${option.ativo ? 'success' : 'neutral'}`}
+                            type="button"
+                            onClick={() => toggleOptionActive(option.id, question.id, option.ativo)}
+                            disabled={savingOptionId === option.id}
+                          >
+                            {savingOptionId === option.id ? '...' : option.ativo ? 'Ativa' : 'Inativa'}
+                          </button>
+                          <button
+                            className="btn ghost small"
+                            type="button"
+                            onClick={() =>
+                              setEditingOption({
+                                id: option.id,
+                                questionId: question.id,
+                                texto: option.texto,
+                                ativo: option.ativo,
+                              })
+                            }
+                          >
+                            Editar
+                          </button>
+                        </>
+                      )}
                     </li>
                   ))}
+                  <li className="option-row">
+                    <input
+                      value={newOptionText[question.id] ?? ''}
+                      onChange={(event) =>
+                        setNewOptionText((prev) => ({ ...prev, [question.id]: event.target.value }))
+                      }
+                      placeholder="Nova opção"
+                    />
+                    <div className="option-row__spacer" />
+                    <button
+                      className="btn secondary small"
+                      type="button"
+                      onClick={() => void handleInlineAddOption(question.id)}
+                    >
+                      Adicionar
+                    </button>
+                  </li>
                 </ul>
               </article>
             ))}

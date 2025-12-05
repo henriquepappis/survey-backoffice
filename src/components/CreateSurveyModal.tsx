@@ -34,7 +34,13 @@ const createQuestionDraft = (ordem: number): DraftQuestion => ({
   id: uniqueId(),
   texto: '',
   ordem,
-  options: [createOptionDraft()],
+  options: [
+    createOptionDraft(),
+    createOptionDraft(),
+    createOptionDraft(),
+    createOptionDraft(),
+    createOptionDraft(),
+  ],
 })
 
 const countActiveOptions = (options: DraftOption[]) => options.filter((option) => option.ativo).length

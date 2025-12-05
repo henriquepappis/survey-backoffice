@@ -5,6 +5,7 @@ import SurveyDetailPage from './pages/SurveyDetailPage'
 import SurveysPage from './pages/SurveysPage'
 import DashboardPage from './pages/DashboardPage'
 import SurveyMetricsPage from './pages/SurveyMetricsPage'
+import CreateSurveyPage from './pages/CreateSurveyPage'
 import { authApi } from './services/api'
 
 const ProtectedRoute = ({ children }: { children: ReactElement }) => {
@@ -39,6 +40,14 @@ const App = () => {
           element={
             <ProtectedRoute>
               <SurveysPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route
+          path="/surveys/new"
+          element={
+            <ProtectedRoute>
+              <CreateSurveyPage />
             </ProtectedRoute>
           }
         />

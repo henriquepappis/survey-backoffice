@@ -1,5 +1,20 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Legend,
+  Line,
+  LineChart,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 import Layout from '../components/Layout'
 import MetricCard from '../components/MetricCard'
 import { dashboardApi, parseApiError, surveyApi } from '../services/api'
@@ -35,6 +50,8 @@ const formatTimeSeriesLabel = (label: string) => {
   }
   return label
 }
+
+const chartColors = ['#0f8f53', '#2ca66f', '#55b98a', '#f3c567', '#f19953', '#df5f51', '#8d6cab']
 
 const renderBreakdownCard = (title: string, items?: DashboardBreakdownItem[]) => (
   <article key={title} className="breakdown-card">
@@ -158,6 +175,49 @@ const SurveyMetricsPage = () => {
     void loadInsights()
   }, [surveyId])
 
+  const responsesOverTime = useMemo(
+    () =>
+      metrics?.responsesOverTime?.map((item) => ({
+        label: formatTimeSeriesLabel(item.label),
+        value: item.count,
+      })) ?? [],
+    [metrics?.responsesOverTime],
+  )
+
+  const questionChartData = useMemo(
+    () =>
+      metrics?.statsByQuestion?.map((question) => ({
+        name: question.texto,
+        value: question.responses ?? 0,
+        completionRate:
+          question.completionRate !== undefined ? question.completionRate.toFixed(1) : undefined,
+      })) ?? [],
+    [metrics?.statsByQuestion],
+  )
+
+  const pieData = (items?: DashboardBreakdownItem[]) =>
+    items
+      ?.filter((item) => item.value !== undefined && item.label)
+      .map((item) => ({ name: item.label, value: item.value })) ?? []
+
+  const peakHours = useMemo(
+    () =>
+      audienceMetrics?.peakHours?.map((item) => ({
+        label: item.label ?? '',
+        value: item.value ?? 0,
+      })) ?? [],
+    [audienceMetrics?.peakHours],
+  )
+
+  const peakDays = useMemo(
+    () =>
+      audienceMetrics?.peakDays?.map((item) => ({
+        label: item.label ?? '',
+        value: item.value ?? 0,
+      })) ?? [],
+    [audienceMetrics?.peakDays],
+  )
+
   if (!surveyId) {
     return (
       <Layout title="Métricas" subtitle="ID inválido">
@@ -229,7 +289,12 @@ const SurveyMetricsPage = () => {
           <div className="stats-grid">
             <article className="stat-card center">
               <p className="eyebrow">Respostas</p>
-              <strong>{totals.responses ?? 0}</strong>
+              <strong>
+                {totals.responses ??
+                  metrics?.totalResponses ??
+                  metrics?.overview?.totalResponses ??
+                  0}
+              </strong>
               <span className="muted-text">Conclusões {totals.completions ?? 0}</span>
             </article>
             <article className="stat-card">
@@ -287,15 +352,16 @@ const SurveyMetricsPage = () => {
               <h2>Respostas ao longo do tempo</h2>
             </div>
           </div>
-          <div className="list-card">
-            <ul className="simple-list">
-              {metrics.responsesOverTime.map((item) => (
-                <li key={item.label}>
-                  <span>{formatTimeSeriesLabel(item.label)}</span>
-                  <strong>{item.count}</strong>
-                </li>
-              ))}
-            </ul>
+          <div className="chart-container">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={responsesOverTime} margin={{ top: 8, right: 16, left: 0, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="label" />
+                <YAxis />
+                <Tooltip formatter={(value: number) => value.toLocaleString('pt-BR')} />
+                <Line type="monotone" dataKey="value" stroke="#0f8f53" strokeWidth={2} dot />
+              </LineChart>
+            </ResponsiveContainer>
           </div>
         </section>
       )}
@@ -308,6 +374,25 @@ const SurveyMetricsPage = () => {
               <h2>Respostas por questão</h2>
             </div>
           </div>
+          {questionChartData.length > 0 && (
+            <div className="chart-container">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={questionChartData} margin={{ top: 8, right: 16, left: 0, bottom: 32 }}>
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis
+                    dataKey="name"
+                    tickFormatter={(value: string) => (value.length > 18 ? `${value.slice(0, 18)}…` : value)}
+                    angle={-20}
+                    textAnchor="end"
+                    height={60}
+                  />
+                  <YAxis />
+                  <Tooltip formatter={(value: number) => value.toLocaleString('pt-BR')} />
+                  <Bar dataKey="value" fill="#0f8f53" radius={[6, 6, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
           <div className="table-wrapper compact">
             <table className="simple-table">
               <thead>
@@ -370,6 +455,110 @@ const SurveyMetricsPage = () => {
               <h2>Dispositivos e origem</h2>
             </div>
           </div>
+          <div className="chart-grid">
+            <article className="chart-card">
+              <p className="chart-card__title">Dispositivos</p>
+              <p className="chart-card__subtitle">Distribuição dos acessos</p>
+              {pieData(audienceMetrics.deviceDistribution).length === 0 ? (
+                <p className="chart-empty">Sem dados</p>
+              ) : (
+                <div className="chart-container chart-container--small">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData(audienceMetrics.deviceDistribution)}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={50}
+                        outerRadius={80}
+                        paddingAngle={2}
+                        label
+                      >
+                        {pieData(audienceMetrics.deviceDistribution).map((entry, index) => (
+                          <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: number) => value.toLocaleString('pt-BR')} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </article>
+
+            <article className="chart-card">
+              <p className="chart-card__title">Origem</p>
+              <p className="chart-card__subtitle">Tráfego declarado</p>
+              {pieData(audienceMetrics.sourceDistribution).length === 0 ? (
+                <p className="chart-empty">Sem dados</p>
+              ) : (
+                <div className="chart-container chart-container--small">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <PieChart>
+                      <Pie
+                        data={pieData(audienceMetrics.sourceDistribution)}
+                        dataKey="value"
+                        nameKey="name"
+                        innerRadius={50}
+                        outerRadius={80}
+                        paddingAngle={2}
+                        label
+                      >
+                        {pieData(audienceMetrics.sourceDistribution).map((entry, index) => (
+                          <Cell key={entry.name} fill={chartColors[index % chartColors.length]} />
+                        ))}
+                      </Pie>
+                      <Tooltip formatter={(value: number) => value.toLocaleString('pt-BR')} />
+                      <Legend />
+                    </PieChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </article>
+
+            <article className="chart-card">
+              <p className="chart-card__title">Horários de pico</p>
+              <p className="chart-card__subtitle">Horas com mais respostas</p>
+              {peakHours.length === 0 ? (
+                <p className="chart-empty">Sem dados</p>
+              ) : (
+                <div className="chart-container chart-container--small">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={peakHours}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="label" />
+                      <YAxis />
+                      <Tooltip formatter={(value: number) => value.toLocaleString('pt-BR')} />
+                      <Bar dataKey="value" fill="#55b98a" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </article>
+          </div>
+
+          <div className="chart-grid">
+            <article className="chart-card">
+              <p className="chart-card__title">Dias de pico</p>
+              <p className="chart-card__subtitle">Dias com mais respostas</p>
+              {peakDays.length === 0 ? (
+                <p className="chart-empty">Sem dados</p>
+              ) : (
+                <div className="chart-container chart-container--small">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <BarChart data={peakDays}>
+                      <CartesianGrid strokeDasharray="3 3" />
+                      <XAxis dataKey="label" />
+                      <YAxis />
+                      <Tooltip formatter={(value: number) => value.toLocaleString('pt-BR')} />
+                      <Bar dataKey="value" fill="#2ca66f" radius={[6, 6, 0, 0]} />
+                    </BarChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </article>
+          </div>
+
           <div className="stats-grid compact">
             <article className="stat-card">
               <p className="eyebrow">Respondentes únicos</p>
