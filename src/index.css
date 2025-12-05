@@ -127,6 +127,10 @@ a {
   font-size: 1.8rem;
 }
 
+.stat-card.stat-card--compact-value strong {
+  font-size: 1.2rem;
+}
+
 .hero-panel {
   background: linear-gradient(115deg, #0f8f53 0%, #0b4a28 100%);
   color: white;
@@ -159,6 +163,24 @@ a {
 .muted-text {
   color: var(--gray-500);
   font-size: 0.85rem;
+}
+
+.muted-text--light {
+  color: var(--white);
+}
+
+.validity-text {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--white);
+  background: var(--green-600);
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.35rem 0.75rem;
+  border-radius: 999px;
+  margin-top: -0.15rem;
+  margin-bottom: 1rem;
 }
 
 .breakdown-grid {
@@ -402,6 +424,12 @@ a {
   border: 1px solid transparent;
 }
 
+.status-stack {
+  display: flex;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+}
+
 .status-pill.success {
   background: var(--green-100);
   border-color: rgba(15, 143, 83, 0.35);
@@ -411,6 +439,12 @@ a {
 .status-pill.neutral {
   background: var(--gray-100);
   color: var(--gray-500);
+}
+
+.status-pill.danger {
+  background: rgba(192, 52, 39, 0.1);
+  border-color: rgba(192, 52, 39, 0.35);
+  color: #c03427;
 }
 
 .error-text {

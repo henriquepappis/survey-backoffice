@@ -37,11 +37,13 @@ O Vite indicará a porta (por padrão `http://localhost:5173`). A API já está 
 | Variável              | Descrição                                                  | Default                      |
 | --------------------- | ---------------------------------------------------------- | ---------------------------- |
 | `VITE_API_BASE_URL`   | URL base da survey-api (inclua o prefixo `/api`).          | `http://localhost:8080/api`  |
+| `VITE_PUBLIC_SURVEY_BASE_URL` | URL base da pesquisa pública (onde o respondente abre a survey). | `http://localhost:5173/surveys` |
 
 Crie um arquivo `.env` se precisar alterar o endpoint:
 
 ```env
 VITE_API_BASE_URL=http://localhost:8081/api
+VITE_PUBLIC_SURVEY_BASE_URL=http://localhost:5174/surveys
 ```
 
 ## Estrutura de pastas

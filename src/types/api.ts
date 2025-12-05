@@ -1,10 +1,12 @@
 export interface Survey {
   id: number
   titulo: string
+  descricao?: string | null
   ativo: boolean
   dataValidade?: string | null
   createdAt?: string
   updatedAt?: string
+  deletedAt?: string | null
 }
 
 export interface Question {
@@ -190,6 +192,7 @@ export interface ApiError {
 
 export type CreateSurveyPayload = {
   titulo: string
+  descricao?: string | null
   ativo: boolean
   dataValidade?: string | null
 }

@@ -1,6 +1,9 @@
 import { NavLink } from 'react-router-dom'
 
-const navigation = [{ to: '/', label: 'Pesquisas', icon: '🗂️', end: true }]
+const navigation = [
+  { to: '/dashboard', label: 'Dashboard', icon: '📊', end: true },
+  { to: '/surveys', label: 'Pesquisas', icon: '🗂️', end: false },
+]
 
 const Sidebar = () => {
   return (

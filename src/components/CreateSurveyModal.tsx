@@ -47,6 +47,7 @@ type CreateSurveyModalProps = {
 
 const CreateSurveyModal = ({ open, onClose, onCreated }: CreateSurveyModalProps) => {
   const [titulo, setTitulo] = useState('')
+  const [descricao, setDescricao] = useState('')
   const [ativo, setAtivo] = useState(true)
   const [dataValidade, setDataValidade] = useState('')
   const [questions, setQuestions] = useState<DraftQuestion[]>([createQuestionDraft(1)])
@@ -68,6 +69,7 @@ const CreateSurveyModal = ({ open, onClose, onCreated }: CreateSurveyModalProps)
   const closeAndReset = () => {
     setTitulo('')
     setDataValidade('')
+    setDescricao('')
     setAtivo(true)
     setQuestions([createQuestionDraft(1)])
     setError(undefined)
@@ -177,6 +179,7 @@ const CreateSurveyModal = ({ open, onClose, onCreated }: CreateSurveyModalProps)
     try {
       const createdSurvey = await surveyApi.create({
         titulo: titulo.trim(),
+        descricao: descricao.trim() || null,
         ativo,
         dataValidade: dataValidade ? new Date(dataValidade).toISOString() : null,
       })
@@ -229,6 +232,15 @@ const CreateSurveyModal = ({ open, onClose, onCreated }: CreateSurveyModalProps)
               <div className="form-field">
                 <span>Título</span>
                 <input value={titulo} onChange={(event) => setTitulo(event.target.value)} required placeholder="Pesquisa de Satisfação" />
+              </div>
+              <div className="form-field">
+                <span>Descrição</span>
+                <textarea
+                  value={descricao}
+                  onChange={(event) => setDescricao(event.target.value)}
+                  placeholder="Contexto ou objetivo da pesquisa"
+                  maxLength={1000}
+                />
               </div>
               <div className="form-field">
                 <span>Data de validade</span>

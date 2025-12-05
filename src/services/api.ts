@@ -134,6 +134,7 @@ export const surveyApi = {
     size?: number
     sort?: string
     direction?: 'asc' | 'desc'
+    includeDeleted?: boolean
   }) {
     const config = params && Object.keys(params).length > 0 ? { params } : undefined
     const response = await apiClient.get<Survey[]>('/surveys', config)
@@ -147,12 +148,26 @@ export const surveyApi = {
     const response = await apiClient.put<Survey>(`/surveys/${id}`, payload)
     return response.data
   },
+  async restore(id: number) {
+    const response = await apiClient.patch<Survey>(`/surveys/${id}/restore`)
+    return response.data
+  },
   async remove(id: number) {
     await apiClient.delete(`/surveys/${id}`)
   },
-  async getStructure(id: number, includeInactiveOptions?: boolean) {
+  async getStructure(
+    id: number,
+    options?: { includeInactiveOptions?: boolean; includeDeleted?: boolean },
+  ) {
+    const params =
+      options && Object.keys(options).length > 0
+        ? {
+            includeInactiveOptions: options.includeInactiveOptions,
+            includeDeleted: options.includeDeleted,
+          }
+        : undefined
     const response = await apiClient.get<SurveyStructure>(`/surveys/${id}/structure`, {
-      params: includeInactiveOptions ? { includeInactiveOptions } : undefined,
+      params,
     })
     return response.data
   },
@@ -250,7 +265,10 @@ export const dashboardApi = {
     const response = await apiClient.get<DashboardOverview>('/dashboard/overview')
     return response.data
   },
-  async getSurveyMetrics(id: number, params?: { from?: string; to?: string }) {
+  async getSurveyMetrics(
+    id: number,
+    params?: { from?: string; to?: string; includeDeleted?: boolean },
+  ) {
     const response = await apiClient.get<SurveyDashboardResponse>(`/dashboard/surveys/${id}`, {
       params,
     })
@@ -261,14 +279,21 @@ export const dashboardApi = {
       return Number.isFinite(num) ? num : undefined
     }
 
+    const normalizeRate = (value?: number) =>
+      value !== undefined ? (value <= 1 ? value * 100 : value) : undefined
+
     const totals = {
       responses: toNumber(overview.totalResponses),
       completions: toNumber(overview.totalCompletions),
       abandons: toNumber(overview.totalAbandons),
-      completionRate: toNumber(overview.completionRate),
-      abandonmentRate: toNumber(overview.abandonmentRate),
+      completionRate: normalizeRate(toNumber(overview.completionRate)),
+      abandonmentRate: normalizeRate(toNumber(overview.abandonmentRate)),
       avgResponseTimeSeconds:
-        toNumber(overview.avgResponseTimeSeconds ?? overview.averageResponseTimeSeconds),
+        toNumber(
+          overview.avgResponseTimeSeconds ??
+            overview.averageResponseTimeSeconds ??
+            (overview as { averageResponseTime?: unknown }).averageResponseTime,
+        ),
     }
     return {
       overview,
@@ -276,10 +301,14 @@ export const dashboardApi = {
       totalResponses: totals.responses ?? toNumber(overview.totalResponses),
       totalCompletions: totals.completions ?? toNumber(overview.totalCompletions),
       totalAbandons: totals.abandons ?? toNumber(overview.totalAbandons),
-      completionRate: totals.completionRate ?? toNumber(overview.completionRate),
-      abandonmentRate: totals.abandonmentRate ?? toNumber(overview.abandonmentRate),
+      completionRate:
+        totals.completionRate ?? normalizeRate(toNumber(overview.completionRate)),
+      abandonmentRate:
+        totals.abandonmentRate ?? normalizeRate(toNumber(overview.abandonmentRate)),
       avgResponseTimeSeconds:
-        overview.avgResponseTimeSeconds ?? overview.averageResponseTimeSeconds,
+        overview.avgResponseTimeSeconds ??
+        overview.averageResponseTimeSeconds ??
+        (overview as { averageResponseTime?: unknown }).averageResponseTime,
       predominantDevice: overview.predominantDevice,
       peakQuestionAbandonment:
         overview.peakQuestionAbandonment ||
@@ -298,13 +327,20 @@ export const dashboardApi = {
                   opt.count ??
                   opt.value,
               ) ?? 0
+            const rawPercentage =
+              option.percentage ??
+              toNumber(opt.percent ?? opt.rate ?? opt.ratio)?.valueOf()
+            const normalizedPercentage =
+              rawPercentage !== undefined
+                ? rawPercentage > 1
+                  ? rawPercentage
+                  : rawPercentage * 100
+                : undefined
             return {
               optionId: option.optionId,
               texto: option.optionText,
               responses: optionResponses,
-              percentage:
-                option.percentage ??
-                toNumber(opt.percent ?? opt.rate ?? opt.ratio)?.valueOf(),
+              percentage: normalizedPercentage,
             }
           }) ?? []
         const questionResponses =
@@ -315,11 +351,21 @@ export const dashboardApi = {
               (question as { count?: unknown }).count,
           ) ??
           options.reduce((acc, option) => acc + (option.responses ?? 0), 0)
+        const optionsWithComputedPercentage =
+          questionResponses > 0
+            ? options.map((option) => ({
+                ...option,
+                percentage:
+                  option.percentage !== undefined
+                    ? option.percentage
+                    : (option.responses / questionResponses) * 100,
+              }))
+            : options
         return {
           questionId: question.questionId,
           texto: question.questionText,
           responses: questionResponses,
-          options,
+          options: optionsWithComputedPercentage,
         }
       }),
       responsesOverTime:
@@ -333,7 +379,10 @@ export const dashboardApi = {
         })),
     } satisfies SurveyDashboardMetrics
   },
-  async getSurveyAudience(id: number, params?: { from?: string; to?: string }) {
+  async getSurveyAudience(
+    id: number,
+    params?: { from?: string; to?: string; includeDeleted?: boolean },
+  ) {
     const response = await apiClient.get<SurveyAudienceResponse>(`/dashboard/surveys/${id}/audience`, {
       params,
     })

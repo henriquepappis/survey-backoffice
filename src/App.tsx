@@ -3,6 +3,8 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import LoginPage from './pages/LoginPage'
 import SurveyDetailPage from './pages/SurveyDetailPage'
 import SurveysPage from './pages/SurveysPage'
+import DashboardPage from './pages/DashboardPage'
+import SurveyMetricsPage from './pages/SurveyMetricsPage'
 import { authApi } from './services/api'
 
 const ProtectedRoute = ({ children }: { children: ReactElement }) => {
@@ -25,10 +27,10 @@ const App = () => {
       <Routes>
         <Route path="/login" element={<LoginPage onLogin={handleLogin} />} />
         <Route
-          path="/"
+          path="/dashboard"
           element={
             <ProtectedRoute>
-              <SurveysPage />
+              <DashboardPage />
             </ProtectedRoute>
           }
         />
@@ -48,7 +50,16 @@ const App = () => {
             </ProtectedRoute>
           }
         />
-        <Route path="*" element={<Navigate to="/" replace />} />
+        <Route
+          path="/surveys/:id/metrics"
+          element={
+            <ProtectedRoute>
+              <SurveyMetricsPage />
+            </ProtectedRoute>
+          }
+        />
+        <Route path="/" element={<Navigate to="/dashboard" replace />} />
+        <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
     </BrowserRouter>
   )
